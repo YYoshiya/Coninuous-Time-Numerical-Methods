@@ -5,7 +5,7 @@ clc; clear; close all;
 % Define parameters
 params.s = 2;          % Risk aversion  
 params.r = 0.04;       % Interest rate
-params.R = 0.04;
+params.R = 1.04;
 params.w = 1;          % wage
 params.I = 1000;       % Grid size
 params.maxit = 10000;  % Maximum iterations
