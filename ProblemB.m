@@ -63,7 +63,7 @@ function [v, c, a, dist] = OneSecGrowth_FDM_fun(params)
     dist = zeros(maxit,1);
     
     % Initial guess for value function
-    tv = (a.^a).^(1-s)/(1-s)/r;
+    tv = (w+a.*R).^(1-s)/(1-s)/r;
     
     % Main iteration loop
     for n = 1:maxit
