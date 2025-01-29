@@ -1,4 +1,4 @@
-%Problem B
+%Problem C
 
 clc; clear; close all;
 
@@ -54,7 +54,7 @@ function [v, I, k, dist] = OneSecGrowth_FDM_fun(params)
     % Setup capital grid
     kmin = 0.1;
     kmax = 10;
-    k = linspace(kmin, kmax, S);
+    k = linspace(kmin, kmax, S)';
     dk = (kmax-kmin)/(S-1);
     
     % Initialize arrays
@@ -79,9 +79,9 @@ function [v, I, k, dist] = OneSecGrowth_FDM_fun(params)
         dVb(1) = p*((d*kmin)/kmin - d);
         
         % Consumption and savings
-        If = (dVf/p + d).*k;
+        If = (dVf./p + d).*k;
         muf = If - d.*k;
-        Ib = (dVb/p + d).*k;
+        Ib = (dVb./p + d).*k;
         mub = Ib - d.*k;
         
         % Steady state values
@@ -95,7 +95,7 @@ function [v, I, k, dist] = OneSecGrowth_FDM_fun(params)
         dV_Upwind = dVf.*If + dVb.*Ib + dV0.*I0;
         
         % Update consumption and utility
-        I = (dV_Upwind/p + d).*k;
+        I = (dV_Upwind./p + d).*k;
         u = k.^a - adjc(I,k,params);
         
         % Construct sparse transition matrix
