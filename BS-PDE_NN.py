@@ -5,23 +5,23 @@ import numpy as np
 
 
 #======================================================
-# 1. ブラック–ショールズの設定
+# 1. Black–Scholes Settings
 #======================================================
-# 例: 欧州コール (配当 d=0, etc.)
+# Example: European Call (dividend d=0, etc.)
 
-r = 0.02         # 無リスク金利
-sigma = 0.4      # ボラティリティ
-K = 10.0         # ストライク
-T = 1.0          # 満期
+r = 0.02         # Risk-free interest rate
+sigma = 0.4      # Volatility
+K = 10.0         # Strike price
+T = 1.0          # Maturity
 Smin = 0.4
-Smax = 40.0      # 空間範囲(大きめに取りすぎず適宜調整)
-d = 0.0          # 配当
+Smax = 40.0      # Spatial range (adjust appropriately without taking it too large)
+d = 0.0          # Dividend
 is_call = True
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #======================================================
-# 2. ニューラルネットの定義
-#    (入力は [t, S], 出力は V(t,S))
+# 2. Definition of the Neural Network
+#    (Input is [t, S], output is V(t,S))
 #======================================================
 class Net(nn.Module):
     def __init__(self, n_hidden=32):
@@ -34,20 +34,20 @@ class Net(nn.Module):
             nn.Linear(n_hidden, 1)
         )
     def forward(self, t, s):
-        # t, s ともに shape=(batch_size,1) を想定
+        # Assuming both t and s have shape=(batch_size,1)
         x = torch.cat([t, s], dim=1)  # (batch_size, 2)
         return self.mlp(x)           # (batch_size, 1)
 
 
 #======================================================
-# 3. PDE残差を計算する関数
-#    (Vに対して自動微分して ∂V/∂t, ∂V/∂S, ∂²V/∂S² を取得)
+# 3. Function to Compute the PDE Residual
+#    (Automatically differentiates V to obtain ∂V/∂t, ∂V/∂S, ∂²V/∂S²)
 #======================================================
 def pde_residual(model, t, s):
     # V(t, s)
     V = model(t, s)  # (batch_size,1)
     
-    # 1階微分
+    # First-order derivatives
     dV_dt = torch.autograd.grad(
         V, t,
         grad_outputs=torch.ones_like(V),
@@ -61,7 +61,7 @@ def pde_residual(model, t, s):
         create_graph=True
     )[0]
     
-    # 2階微分
+    # Second-order derivative
     d2V_ds2 = torch.autograd.grad(
         dV_ds, s,
         grad_outputs=torch.ones_like(dV_ds),
@@ -70,18 +70,18 @@ def pde_residual(model, t, s):
     )[0]
     
     # Black-Scholes PDE:
-    # dV/dt + 0.5 * sigma^2 * S^2 * d2V/dS^2 + (r - d)* S * dV/dS - r * V = 0
-    # ここでは d=0 としているが残しておいてもOK
-    # 注意: t in [0,T], S>0
-    # PINN上では t=0->T を「順方向」の時間として扱うことが多い点に留意 (後述)
-    # PDE 残差:
+    # dV/dt + 0.5 * sigma^2 * S^2 * d²V/dS² + (r - d)* S * dV/dS - r * V = 0
+    # Here, d=0 is assumed but it's okay to keep it
+    # Note: t in [0,T], S>0
+    # Keep in mind that in PINNs, time is often treated as "forward" from t=0 to T (as explained later)
+    # PDE Residual:
     res = dV_dt + 0.5 * sigma**2 * s**2 * d2V_ds2 \
           + (r - d) * s * dV_ds - r * V
     return res
 
 
 #======================================================
-# 4. 境界条件、終端条件を課すための Loss
+# 4. Loss Functions to Impose Boundary and Terminal Conditions
 #======================================================
 def interior_pde_loss(model, batch_size_int=128):
     t_i = torch.rand(batch_size_int, 1, device=device) * T
@@ -119,7 +119,7 @@ def boundary_final_loss(model, batch_size_bc=128):
 
 
 #======================================================
-# 6. 学習ループ
+# 6. Training Loop
 #======================================================
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model = Net(n_hidden=64).to(device)
@@ -128,9 +128,9 @@ optimizer = optim.Adam(model.parameters(), lr=1e-3)
 n_epochs = 5000
 for epoch in range(n_epochs):
     optimizer.zero_grad()
-    # PDE内部点のロス
+    # Loss for interior PDE points
     loss_pde = interior_pde_loss(model, batch_size_int=128)
-    # 境界・終端条件ロス
+    # Loss for boundary and terminal conditions
     loss_bc = boundary_final_loss(model, batch_size_bc=128)
     loss = loss_pde + loss_bc
     loss.backward()
@@ -141,43 +141,71 @@ for epoch in range(n_epochs):
 
 
 #======================================================
-# 7. 学習後のテスト・簡易評価
-#    t=0 上での価格曲線などを可視化例
+# 7. Post-Training Testing and 3D Evaluation
+#    Example of visualizing the price surface V(t, S)
 #======================================================
 model.eval()
 
-# 例: t=0 で S を細かく変化させて予測
-S_test = np.linspace(0.4, Smax, 1000)[:,None]
-t_zero = np.zeros_like(S_test)
+# Import necessary libraries for 3D plotting
+try:
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+except ImportError:
+    print("Matplotlib not available, skipping plot.")
+    exit()
 
-ts_torch = torch.FloatTensor(t_zero).to(device)
-Ss_torch = torch.FloatTensor(S_test).to(device)
+# Generate a grid of t and S values
+num_t = 100  # Number of points in t-axis
+num_S = 100  # Number of points in S-axis
+t_test = np.linspace(0, T, num_t)
+s_test = np.linspace(Smin, Smax, num_S)
+T_grid, S_grid = np.meshgrid(t_test, s_test)
+
+# Flatten the grid to create input pairs
+t_flat = T_grid.flatten()[:, None]
+s_flat = S_grid.flatten()[:, None]
+
+# Convert to torch tensors
+ts_torch = torch.FloatTensor(t_flat).to(device)
+Ss_torch = torch.FloatTensor(s_flat).to(device)
+
+# Predict V(t, S) using the trained model
 with torch.no_grad():
     V_pred = model(ts_torch, Ss_torch).cpu().numpy().flatten()
 
-# 参考解(ブラック–ショールズ理論解)と比較してみる (欧州コール, d=0)
-# Analytical closed-form (BS formula) for T=1, r=0.02, sigma=0.2
+# Reshape the predictions to match the grid
+V_grid = V_pred.reshape(S_grid.shape)
+
+# Analytical Black-Scholes solution for comparison (optional)
 def bs_call_price(S, K, r, sigma, T):
-    import math
     from math import log, sqrt, exp
     from scipy.stats import norm
-    d1 = (np.log(S/K) + (r+0.5*sigma**2)*T)/(sigma*math.sqrt(T))
-    d2 = d1 - sigma*math.sqrt(T)
-    c = S*norm.cdf(d1) - K*math.exp(-r*T)*norm.cdf(d2)
+    d1 = (np.log(S/K) + (r + 0.5 * sigma**2) * T) / (sigma * sqrt(T))
+    d2 = d1 - sigma * sqrt(T)
+    c = S * norm.cdf(d1) - K * exp(-r * T) * norm.cdf(d2)
     return c
 
-V_bs = bs_call_price(S_test, K, r, sigma, T)
+# Compute analytical prices (optional)
+V_bs = bs_call_price(S_grid, K, r, sigma, T)
 
-# 簡単に matplotlib でプロット (Jupyter等で実行想定)
-try:
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(6,4))
-    plt.plot(S_test, V_pred, label='PINN Approx (t=0)')
-    plt.plot(S_test, V_bs, 'r--', label='BS Formula (t=0)')
-    plt.xlabel('S')
-    plt.ylabel('Option Value at t=0')
-    plt.legend()
-    plt.title("European Call Option via PINN vs. Black-Scholes Formula")
-    plt.show()
-except ImportError:
-    print("Matplotlib not available, skipping plot.")
+# Create a 3D plot
+fig = plt.figure(figsize=(10, 7))
+ax = fig.add_subplot(111, projection='3d')
+
+# Plot the PINN approximation
+surf = ax.plot_surface(T_grid, S_grid, V_grid, cmap='viridis', alpha=0.8, label='PINN Approximation')
+
+# Optionally, plot the Black-Scholes analytical solution
+# Uncomment the following lines if you want to include the analytical solution in the plot
+# surf_bs = ax.plot_surface(T_grid, S_grid, V_bs, cmap='plasma', alpha=0.6, label='BS Analytical Solution')
+
+# Customize the plot
+ax.set_xlabel('Time t')
+ax.set_ylabel('Asset Price S')
+ax.set_zlabel('Option Value V(t, S)')
+ax.set_title('European Call Option Value Surface via PINN')
+
+# Add a color bar
+fig.colorbar(surf, shrink=0.5, aspect=5)
+
+plt.show()
