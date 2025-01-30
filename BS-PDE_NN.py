@@ -176,7 +176,7 @@ with torch.no_grad():
 # Reshape the predictions to match the grid
 V_grid = V_pred.reshape(S_grid.shape)
 
-# Analytical Black-Scholes solution for comparison (optional)
+# Analytical Black-Scholes solution for comparison
 def bs_call_price(S, K, r, sigma, T):
     from math import log, sqrt, exp
     from scipy.stats import norm
