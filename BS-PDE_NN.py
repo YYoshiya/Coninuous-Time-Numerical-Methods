@@ -7,14 +7,13 @@ import numpy as np
 #======================================================
 # 1. Black–Scholes Settings
 #======================================================
-# Example: European Call (dividend d=0, etc.)
 
 r = 0.02         # Risk-free interest rate
 sigma = 0.4      # Volatility
 K = 10.0         # Strike price
 T = 1.0          # Maturity
-Smin = 0.4
-Smax = 40.0      # Spatial range (adjust appropriately without taking it too large)
+Smin = 0.0
+Smax = 1000      # Spatial range (adjust appropriately without taking it too large)
 d = 0.0          # Dividend
 is_call = True
 
@@ -28,9 +27,9 @@ class Net(nn.Module):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(2, n_hidden),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(n_hidden, n_hidden),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(n_hidden, 1)
         )
     def forward(self, t, s):
@@ -69,12 +68,6 @@ def pde_residual(model, t, s):
         create_graph=True
     )[0]
     
-    # Black-Scholes PDE:
-    # dV/dt + 0.5 * sigma^2 * S^2 * d²V/dS² + (r - d)* S * dV/dS - r * V = 0
-    # Here, d=0 is assumed but it's okay to keep it
-    # Note: t in [0,T], S>0
-    # Keep in mind that in PINNs, time is often treated as "forward" from t=0 to T (as explained later)
-    # PDE Residual:
     res = dV_dt + 0.5 * sigma**2 * s**2 * d2V_ds2 \
           + (r - d) * s * dV_ds - r * V
     return res
@@ -158,7 +151,7 @@ except ImportError:
 num_t = 100  # Number of points in t-axis
 num_S = 100  # Number of points in S-axis
 t_test = np.linspace(0, T, num_t)
-s_test = np.linspace(Smin, Smax, num_S)
+s_test = np.linspace(0, 20, num_S)
 T_grid, S_grid = np.meshgrid(t_test, s_test)
 
 # Flatten the grid to create input pairs
@@ -176,17 +169,6 @@ with torch.no_grad():
 # Reshape the predictions to match the grid
 V_grid = V_pred.reshape(S_grid.shape)
 
-# Analytical Black-Scholes solution for comparison
-def bs_call_price(S, K, r, sigma, T):
-    from math import log, sqrt, exp
-    from scipy.stats import norm
-    d1 = (np.log(S/K) + (r + 0.5 * sigma**2) * T) / (sigma * sqrt(T))
-    d2 = d1 - sigma * sqrt(T)
-    c = S * norm.cdf(d1) - K * exp(-r * T) * norm.cdf(d2)
-    return c
-
-# Compute analytical prices (optional)
-V_bs = bs_call_price(S_grid, K, r, sigma, T)
 
 # Create a 3D plot
 fig = plt.figure(figsize=(10, 7))
